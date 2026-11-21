@@ -1,11 +1,13 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.database.db import get_session
-from app.database.models import Student, Subject, Task
-from app.schemas import DirectoryEntry, TaskCreate, TaskRead
+from app.database.models import Status, Student, Subject, Task
+from app.schemas import DirectoryEntry, TaskCreate, TaskRead, TaskUpdate
 
 router = APIRouter()
 Database = Annotated[Session, Depends(get_session)]
@@ -37,8 +39,31 @@ def subjects(session: Database):
 
 
 @router.get("/tasks", response_model=list[TaskRead], tags=["Задачи"])
-def list_tasks(session: Database):
-    return session.exec(select(Task).order_by(Task.due_date, Task.id)).all()
+def list_tasks(
+    session: Database,
+    search: str | None = None,
+    student_id: int | None = None,
+    subject_id: int | None = None,
+    status: Status | None = None,
+    due_from: date | None = None,
+    due_to: date | None = None,
+):
+    if due_from and due_to and due_from > due_to:
+        raise HTTPException(422, "Начало периода позже конца.")
+    query = select(Task)
+    if search and search.strip():
+        query = query.where(func.casefold(Task.title).contains(search.strip().casefold(), autoescape=True))
+    if student_id is not None:
+        query = query.where(Task.student_id == student_id)
+    if subject_id is not None:
+        query = query.where(Task.subject_id == subject_id)
+    if status is not None:
+        query = query.where(Task.status == status)
+    if due_from:
+        query = query.where(Task.due_date >= due_from)
+    if due_to:
+        query = query.where(Task.due_date <= due_to)
+    return session.exec(query.order_by(Task.due_date, Task.id)).all()
 
 
 @router.get("/tasks/{id}", response_model=TaskRead, tags=["Задачи"])
@@ -54,3 +79,22 @@ def create_task(data: TaskCreate, session: Database):
     session.commit()
     session.refresh(task)
     return task
+
+
+@router.patch("/tasks/{id}", response_model=TaskRead, tags=["Задачи"])
+def update_task(id: int, data: TaskUpdate, session: Database):
+    task = find_task(session, id)
+    changes = data.model_dump(exclude_unset=True)
+    check_links(session, changes)
+    task.sqlmodel_update(changes)
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
+@router.delete("/tasks/{id}", status_code=204, tags=["Задачи"])
+def delete_task(id: int, session: Database):
+    task = find_task(session, id)
+    session.delete(task)
+    session.commit()
