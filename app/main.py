@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
+from importlib.resources import files
 
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
-from swagger_ui_bundle import swagger_ui_path
 
 from app.database.db import engine
 from app.routers.tasks import router
@@ -19,7 +19,7 @@ def create_app(bind=engine):
     api = FastAPI(title="Учебный планировщик", version="1.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     api.include_router(router)
-    api.mount("/swagger-assets", StaticFiles(directory=swagger_ui_path), name="swagger")
+    api.mount("/swagger-assets", StaticFiles(directory=str(files("swagger_ui") / "static")), name="swagger")
 
     @api.get("/docs", include_in_schema=False)
     def swagger():
