@@ -83,9 +83,10 @@ def task_form(subjects, student_id, task=None):
             if changes:
                 api("PATCH", f"/tasks/{task['id']}", json=changes)
             saved(f"Изменения задачи №{task['id']} сохранены.")
-        created = api("POST", "/tasks", json=values)
-        st.session_state["created_count"] = st.session_state.get("created_count", 0) + 1
-        saved(f"Создана задача №{created['id']}.")
+        else:
+            created = api("POST", "/tasks", json=values)
+            st.session_state["created_count"] = st.session_state.get("created_count", 0) + 1
+            saved(f"Создана задача №{created['id']}.")
 
 
 def main():
@@ -107,8 +108,9 @@ def main():
     start = st.sidebar.date_input("Срок с", value=None, format="DD.MM.YYYY")
     end = st.sidebar.date_input("Срок по", value=None, format="DD.MM.YYYY")
 
+    notice = st.empty()
     if "notice" in st.session_state:
-        st.success(st.session_state.pop("notice"))
+        notice.success(st.session_state.pop("notice"))
     # Обзор показывает весь план студента, даже когда таблица отфильтрована.
     all_tasks = api("GET", "/tasks", params={"student_id": student})
     pending = [task for task in all_tasks if task["status"] != "Выполнена"]
@@ -120,15 +122,17 @@ def main():
     b.metric("Просрочены", len(late), border=True)
     c.metric("Выполнены", len(all_tasks) - len(pending), border=True)
     st.subheader("Ближайшие сроки")
-    if upcoming:
-        for task in upcoming[:3]:
-            with st.container(border=True):
-                st.text(f"{deadline_label(task)}  ·  {task['due_date']}  ·  {subjects[task['subject_id']]}")
-                st.text(task["title"])
-    else:
-        st.caption("Предстоящих дедлайнов пока нет.")
-    if late:
-        st.warning("Самая ранняя просроченная задача — " + late[0]["title"])
+    with st.container():
+        if upcoming:
+            for task in upcoming[:3]:
+                with st.container(border=True):
+                    due = date.fromisoformat(task["due_date"]).strftime("%d.%m.%Y")
+                    st.text(f"{deadline_label(task)}  ·  {due}  ·  {subjects[task['subject_id']]}")
+                    st.text(task["title"])
+        else:
+            st.caption("Предстоящих дедлайнов пока нет.")
+        if late:
+            st.warning("Самая ранняя просроченная задача — " + late[0]["title"])
 
     st.subheader("Мои задачи")
     search = st_keyup("Поиск по названию", placeholder="Введите часть названия", debounce=250, key="search_title") or ""
@@ -144,7 +148,8 @@ def main():
             "№": t["id"], "Задача": t["title"], "Дисциплина": subjects[t["subject_id"]],
             "Срок": date.fromisoformat(t["due_date"]), "Приоритет": t["priority"],
             "Статус": t["status"], "До срока": deadline_label(t),
-        } for t in tasks], hide_index=True, width="stretch")
+        } for t in tasks], hide_index=True, width="stretch",
+            column_config={"Срок": st.column_config.DateColumn(format="DD.MM.YYYY")})
     else:
         st.info("Задач по выбранным условиям нет. Измените фильтры или добавьте задачу.")
 
